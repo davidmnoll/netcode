@@ -1,6 +1,7 @@
 # https://medium.com/spidernitt/breaking-down-neural-networks-an-intuitive-approach-to-backpropagation-3b2ff958794c
 # https://machinelearningmastery.com/implement-backpropagation-algorithm-scratch-python/
 # https://mattmazur.com/2015/03/17/a-step-by-step-backpropagation-example/
+#   --- error?, d_transfer(output) should be d_transfer(net)?
 # http://cs229.stanford.edu/notes2020spring/cs229-notes-deep_learning.pdf
 
 import math
@@ -38,6 +39,16 @@ class Perceptron:
         else:
             return super.__repr__(self)
 
+    def get_activation(self):
+        if self.input is None:
+            x = 0
+            for node, info in self.inputs.items():
+                x = x + node.get_output() * info["weight"]
+            return self.bias + x
+
+        else:
+            return self.input
+
     def get_output(self):
         if self.input is None:
             x = 0
@@ -48,50 +59,42 @@ class Perceptron:
         else:
             return self.input
 
-    def _train_internal(self, from_downstream):
+    def _train_internal(self, delta_prev):
         '''
-        pd = partial derivative = d[x]/d[y]
-        self = current perceptron
-        downstream = moving away from input, toward output node
-        upstream = moving toward input, away from output node
-        out = output
-        err = error
-        net= "net input" / activation / output before transfer function
+        J = E_tot = total error
+        o = net activation of final layer = final output?
+        z = net = net input = activation of first layer = bias + sum ( weights * previous outputs )
+        a = out = node output = transfer_fn( bias + sum ( weights * previous outputs ) )
+        dJ/d[a_i] = d[E_tot]/d[a_i] = d[E_i]/d[a_i] = d_err(a_i, target) = (a_i - target) for squared error function ???
+            ... the part. deriv. of total error wrt. single output  == part. deriv. of single output error wrt. single output
 
-        notes:
-            - d[err_self]/d[out_self] == d[err_total]/d[out_self]
+        da/dz = d[out]/d[net] = d_transfer( z )
+        do/da = d[final activation]/d[output from node] = weight of node
+        dJ/do = d[E_i]/d[a_i] for output node = d_err(o, target)
+        dJ/dz = dJ/do * do/da * da/dz = dJ/do * w * d_transfer(a)
+        dJ/dw = delta_weight = dJ/dz * dz/dw = dJ/dz * input = delta * previous layer output
 
-        during output layer:
-            from_downstream = d[err_self]/d[out_self] = pd of [error of this output neuron] wrt. [output of this output perceptron]
-            to_upstream = d[err_self]/d[out_upstream] = pd of [error of this output neuron] wrt. [output of upstream perceptron]
-                = d[err_self]/d[out_self] * d[out_self]/d[net]          *    d[net]/d[out_upstream]
-                = (output - acutal)       * (output * ( 1 - output ) )  *    weight between self & upstream perceptron
-                = from_downstream * pd of [output of this neuron] wrt. ["net input" of neuron i.e. output before transfer function]
-            d_err_d_node_weight =
-            new weight =
-
-        during hidden layer:
-            from_downstream =
-                = d[err_outputperceptron]/d[out_outputperceptron] * d[out_outputperceptron]/d[net_outputperceptron] * d[net_outputperceptron]/d[out_self]
-                = pd of [error of output perceptron] wrt. [output of this hidden perceptron]
-            to_upstream = d[err_outputperceptron] = pd of [error of output perceptron] wrt. [net input of this perceptron]
-                = d[err_outputperceptron]/d[net_ou] * d[out_self]/d[net]          *    d[net]/d[out_upstream]
-                = from_downstream       * (output * ( 1 - output ) )  *    weight between self & upstream perceptron
-                = from_downstream * pd of [output of this neuron] wrt. ["net input" of hidden neuron i.e. output before transfer function]
-            d_err_d_node_weight =
-            new weight =
-
-
+        delta_first = delta for output layer = dJ/do = d_err(o, target)
+        delta_weight[i]_first = dJ/do * a[i] = delta_first * a[i]
+        delta_bias = delta_first = dJ/do
+        delta_second =  dJ/do * do/da * da/dz
+            = delta_first * weight[btwn output & this] * d_transfer(z[this node activation])
+        delta_weight[i]_second = delta_second * dz/dw = delta_second * input[i]
+        delta_nth = dJ/dz[n-1] * dz[n-1]/da[n] * da[n]/dz[n]
+            = delta_[n-1]th * weight[btwn [n-1]th & this] * d_transfer(z[this node activation])
+        delta_weight[i]_nth = delta_nth * a[i][from [n+1]th layer node] = delta_nth * output from n+1 layer
+        delta_bias = delta_nth
         '''
-
-        output = self.get_output()
-        to_upstream_partial = from_downstream * self.d_transfer(output)
+        # output = self.get_output()
+        self.bias = self.bias - delta_prev
         for node, info in self.inputs.items():
             node_output = node.get_output()
-            node._train_internal(to_upstream_partial * info["weight"])
+            node_activation = node.get_activation()
+            delta_weight = delta_prev * node_output
+            new_delta = delta_prev * info["weight"] * self.d_transfer(node_activation)
+            node._train_internal(new_delta)
             # pp("previous: " + str(info["weight"]) )
-            d_err_d_node_weight = to_upstream_partial * self.d_transfer(node_output) * node_output
-            self.inputs[node]["weight"] = info["weight"] - ( d_err_d_node_weight * self.learning_rate )
+            self.inputs[node]["weight"] = info["weight"] - ( delta_weight * self.learning_rate )
             # pp("new: " + str(info["weight"]) )
 
     def train(self, target):
@@ -139,13 +142,13 @@ if __name__ == "__main__":
     pp(hidden2)
     hidden1.set_input(1)
     hidden2.set_input(1)
-    out1.train(2)
-    out2.train(4)
-    out1.train(2)
-    out2.train(4)
-    out1.train(2)
-    out2.train(4)
-    out1.train(2)
-    out2.train(4)
-    out1.train(2)
-    out2.train(4)
+    out1.train(-2)
+    out2.train(-4)
+    out1.train(-2)
+    out2.train(-4)
+    out1.train(-2)
+    out2.train(-4)
+    out1.train(-2)
+    out2.train(-4)
+    out1.train(-2)
+    out2.train(-4)
